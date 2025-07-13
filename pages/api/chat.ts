@@ -29,10 +29,10 @@ export default async function handler(
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
-  // Model default gratis dari OpenRouter
-  const model = 'openchat/openchat-7b';
+  // ✅ Pakai model andalan kamu
+  const model = 'nousresearch/nous-hermes-2-mixtral-8x7b-dpo';
 
-  // Tambahkan prompt sistem agar AI siap menjawab semua topik
+  // ✅ Prompt sistem awal
   const systemMessage: Message = {
     role: 'system',
     parts: [
