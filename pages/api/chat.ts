@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
-// Format data riwayat chat dari frontend
 type Part = { text: string };
 type Message = {
   role: 'user' | 'model' | 'system';
@@ -13,12 +12,21 @@ type RequestData = {
   message: string;
 };
 
-// Fungsi utama
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  // Hanya izinkan POST
+  // ✅ Tambahkan CORS untuk izinkan frontend kamu
+  res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  // ✅ Handle preflight OPTIONS request
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Lanjutkan handler POST seperti biasa
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -29,10 +37,8 @@ export default async function handler(
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
-  // ✅ Pakai model andalan kamu
   const model = 'nousresearch/nous-hermes-2-mixtral-8x7b-dpo';
 
-  // ✅ Prompt sistem awal
   const systemMessage: Message = {
     role: 'system',
     parts: [
@@ -43,7 +49,6 @@ export default async function handler(
     ],
   };
 
-  // Gabungkan sistem prompt dengan riwayat pengguna
   const fullHistory: Message[] = [systemMessage, ...history];
 
   try {
@@ -62,7 +67,7 @@ export default async function handler(
         headers: {
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://ai.kangajie.site', // Ganti sesuai domain kamu
+          'HTTP-Referer': 'https://ai.kangajie.site',
           'X-Title': 'KangAjie AI',
         },
       }
