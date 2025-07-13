@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
+// Tipe data
 type Part = { text: string };
 type Message = {
   role: 'user' | 'model' | 'system';
@@ -16,16 +17,29 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  // ✅ CORS header untuk frontend kamu
+  res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  // ✅ Tangani preflight CORS
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // ✅ Hanya izinkan POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  // ✅ Ambil isi request
   const { history, message } = req.body as RequestData;
 
   if (!history || !Array.isArray(history) || !message) {
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
+  // ✅ Prompt sistem (AI persona)
   const systemMessage: Message = {
     role: 'system',
     parts: [
@@ -38,20 +52,20 @@ export default async function handler(
 
   const fullHistory: Message[] = [systemMessage, ...history];
 
-  // ✅ Daftar model: utama + fallback
+  // ✅ Daftar model (utama + cadangan)
   const models = [
-    'nousresearch/nous-hermes-2-mixtral-8x7b-dpo', // utama
+    'nousresearch/nous-hermes-2-mixtral-8x7b-dpo',
     'meta-llama/llama-3.1-405b-instruct:free',
     'qwen/qwen3-235b-a22b:free',
     'deepseek/deepseek-r1-distill-llama-70b:free',
     'qwen/qwen2.5-vl-72b-instruct:free',
   ];
 
-  // ✅ Daftar API Key
+  // ✅ Daftar API Key (utama + sekunder)
   const apiKeys = [
     process.env.OPENROUTER_API_KEY_MAIN,
     process.env.OPENROUTER_API_KEY_SECONDARY,
-  ].filter(Boolean); // filter key yang undefined/null
+  ].filter(Boolean); // hanya ambil yang terisi
 
   let lastError = null;
 
@@ -79,13 +93,11 @@ export default async function handler(
           }
         );
 
-        const aiReply =
-          response.data.choices?.[0]?.message?.content || '...';
-
+        const aiReply = response.data.choices?.[0]?.message?.content || '...';
         return res.status(200).json({ reply: aiReply });
       } catch (error: any) {
         lastError = error.response?.data || error.message;
-        console.warn(`❌ Gagal pakai model ${model} - coba berikutnya...`);
+        console.warn(`❌ Gagal pakai model ${model} dengan key tertentu`);
       }
     }
   }
