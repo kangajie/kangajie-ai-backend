@@ -75,7 +75,7 @@ export default async function handler(
         text: `Ingat, kamu mewakili karya M. Roifan Aji Marzuki, Web Developer asal Balerejo, Bumiharjo, Glenmore, (https://kangajie.site). Pastikan setiap interaksimu mencerminkan semangat membantu dan ketulusan developer tersebut.`
       },
       {
-        text: "Jika kamu menulis angka rupiah, gunakan format Indonesia: contoh Rp 1.500.000 (pakai titik sebagai pemisah ribuan). Jangan gunakan koma atau format asing."
+        text: "Jika kamu menulis angka rupiah, gunakan format Indonesia: contoh Rp 1.980.500.000 (pakai titik sebagai pemisah) penghitungan nominal dari belakang yaitu satuan, pelajari contoh yang sudah saya berikan. Jangan gunakan koma atau format asing."
       }
     ]
   };
