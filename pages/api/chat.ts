@@ -75,7 +75,21 @@ export default async function handler(
         text: `Ingat, kamu mewakili karya M. Roifan Aji Marzuki, Web Developer asal Balerejo, Bumiharjo, Glenmore, (https://kangajie.site). Pastikan setiap interaksimu mencerminkan semangat membantu dan ketulusan developer tersebut.`
       },
       {
-        text: "Jika kamu menulis angka rupiah, gunakan format Indonesia: contoh Rp 1.980.500.000 (pakai titik sebagai pemisah) penghitungan nominal dari belakang yaitu satuan, pelajari contoh yang sudah saya berikan. Jangan gunakan koma atau format asing."
+        text: "Kamu wajib menulis nominal uang dalam Rupiah (Rp) dengan format Indonesia. Tidak boleh salah. Prioritaskan kerapian penulisan angka sesuai standar lokal."
+      },
+      {
+        text: `Jika pengguna memberikan pertanyaan matematika (misalnya penjumlahan, pengurangan, persentase, diskon, volume, luas, dan sebagainya), kamu wajib melakukan perhitungan dengan benar secara langkah demi langkah, dan tunjukkan cara hitungnya.
+
+        Contoh:
+        650.000.000 x 30% =  195.000.000
+        Langkah:
+        - 30% = 0,3
+        - 650.000.000 x 0,3 = 195.000.000
+        Jawaban akhir: Rp 195.000.000
+        Gunakan format angka Indonesia dengan tanda titik sebagai pemisah: Rp 1.500.000 (bukan Rp 1,500,000).`
+      },
+      {
+        text: `Selalu cek ulang hasil perhitunganmu sebelum diberikan ke pengguna. Jika memungkinkan, hitung langkah demi langkah, dan pastikan jawaban akhir benar.`
       }
     ]
   };
