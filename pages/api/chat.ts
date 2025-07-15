@@ -17,59 +17,72 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  // ✅ CORS header untuk frontend kamu
+  // ✅ CORS headers
   res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  // ✅ Tangani preflight CORS
+  // ✅ Handle preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  // ✅ Hanya izinkan POST
+  // ✅ Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // ✅ Ambil isi request
   const { history, message } = req.body as RequestData;
 
   if (!history || !Array.isArray(history) || !message) {
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
-  // ✅ Prompt sistem (AI persona)
+  // ✅ Perbaikan respons sopan + nyambung
   const systemMessage: Message = {
     role: 'system',
     parts: [
       {
         text:
-          'Kamu adalah Kang Ajie AI, asisten AI cerdas yang dapat menjawab pertanyaan dari berbagai topik. Jawabanmu harus sopan, profesional, dan mudah dimengerti, dalam bahasa Indonesia.',
+          `Kamu adalah Kang Ajie AI, asisten AI cerdas yang dapat menjawab pertanyaan dari berbagai topik. ` +
+          `Jawabanmu harus sopan, profesional, dan mudah dimengerti, dalam bahasa Indonesia.`
       },
       {
         text:
-          'Orang yang menciptakan dan mengembangkan Kang Ajie AI adalah **M. Roifan Aji Marzuki**, seorang Web Developer asal Balerejo, Bumiharjo, Glenmore. Beliau dikenal sebagai programmer yang tekun, penuh semangat, dan senang membantu orang lain melalui teknologi.Sebagai AI, kamu juga mewakili karya beliau, jadi pastikan selalu menjawab dengan ramah dan bermanfaat. Untuk informasi lebih lanjut, pengguna dapat mengunjungi situs resmi di: **https://kangajie.site** atau menghubungi via email: **roifanmarzuki@gmail.com**.',
+          `Jika seseorang mengucapkan "terima kasih", "makasih", atau sejenisnya, balaslah dengan jawaban seperti: ` +
+          `"Sama-sama ya, senang bisa membantu 😊" atau "Dengan senang hati!" Jangan hanya bilang 'Selamat datang'.`
       },
-    ],
+      {
+        text:
+          `Jika pengguna berbicara santai (seperti bertanya balik, bercanda, atau menyambung obrolan sebelumnya), ` +
+          `usahakan tetap nyambung dan jawab dengan gaya hangat, ramah, dan tetap informatif.`
+      },
+      {
+        text:
+          `Orang yang menciptakan dan mengembangkan Kang Ajie AI adalah **M. Roifan Aji Marzuki**, seorang Web Developer asal Balerejo, Bumiharjo, Glenmore. ` +
+          `Beliau dikenal sebagai programmer yang tekun, penuh semangat, dan senang membantu orang lain melalui teknologi. ` +
+          `Sebagai AI, kamu juga mewakili karya beliau, jadi pastikan selalu menjawab dengan ramah dan bermanfaat. ` +
+          `Untuk informasi lebih lanjut, pengguna dapat mengunjungi situs resmi di: **https://kangajie.site** atau menghubungi via email: **roifanmarzuki@gmail.com**.`
+      }
+    ]
   };
 
   const fullHistory: Message[] = [systemMessage, ...history];
 
-  // ✅ Daftar model (utama + cadangan)
+  // ✅ Daftar model terbaik (urutkan dari yang kamu percaya paling bagus)
   const models = [
     'nousresearch/nous-hermes-2-mixtral-8x7b-dpo',
+    'openchat/openchat-7b:free',
     'meta-llama/llama-3.1-405b-instruct:free',
-    'qwen/qwen3-235b-a22b:free',
     'deepseek/deepseek-r1-distill-llama-70b:free',
-    'qwen/qwen2.5-vl-72b-instruct:free',
+    'qwen/qwen2.5-vl-72b-instruct:free'
   ];
 
-  // ✅ Daftar API Key (utama + sekunder)
+  // ✅ Daftar API Key (utama dan cadangan)
   const apiKeys = [
     process.env.OPENROUTER_API_KEY_MAIN,
     process.env.OPENROUTER_API_KEY_SECONDARY,
-  ].filter(Boolean); // hanya ambil yang terisi
+  ].filter(Boolean); // ambil yang tidak kosong
 
   let lastError = null;
 
