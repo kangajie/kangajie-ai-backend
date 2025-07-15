@@ -85,8 +85,7 @@ export default async function handler(
         Langkah:
         - 30% = 0,3
         - 650.000.000 x 0,3 = 195.000.000
-        Jawaban akhir: Rp 195.000.000
-        Gunakan format angka Indonesia dengan tanda titik sebagai pemisah: Rp 1.500.000 (bukan Rp 1,500,000).`
+        Jawaban akhir: Rp 195.000.000`
       },
       {
         text: `Selalu cek ulang hasil perhitunganmu sebelum diberikan ke pengguna. Jika memungkinkan, hitung langkah demi langkah, dan pastikan jawaban akhir benar.`
