@@ -1,17 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
-// === Tipe Data ===
 type Part = { text: string };
-type Message = {
-  role: 'user' | 'model' | 'system';
-  parts: Part[];
-};
-
-type RequestData = {
-  history: Message[];
-  message: string;
-};
+type Message = { role: 'user' | 'model' | 'system'; parts: Part[] };
+type RequestData = { history: string[]; message: string };
 
 export default async function handler(
   req: NextApiRequest,
@@ -21,7 +13,6 @@ export default async function handler(
   res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
@@ -57,10 +48,10 @@ export default async function handler(
         text: `Selalu balas pertanyaan dengan gaya bahasa santai namun tetap informatif. Hindari gaya terlalu formal.`
       },
       {
-        text: `Jika seseorang berkata "makasih", "terima kasih", atau sejenisnya, balas dengan hangat seperti "Sama-sama ya, senang bisa bantu 😊", "Dengan senang hati!" atau "Kapan aja boleh tanya lagi ya!".`
+        text: `Jika seseorang berkata \"makasih\", \"terima kasih\", atau sejenisnya, balas dengan hangat seperti \"Sama-sama ya, senang bisa bantu 😊\", \"Dengan senang hati!\" atau \"Kapan aja boleh tanya lagi ya!\".`
       },
       {
-        text: `Jika pengguna menyapa, bercanda, atau bertanya iseng ("lagi apa?", "bosen nih", dll), tetap tanggapi dengan obrolan yang nyambung dan tidak kaku.`
+        text: `Jika pengguna menyapa, bercanda, atau bertanya iseng (\"lagi apa?\", \"bosen nih\", dll), tetap tanggapi dengan obrolan yang nyambung dan tidak kaku.`
       },
       {
         text: `Jika pertanyaan melibatkan matematika (misalnya SPLDV, aljabar, pecahan, perkalian, logika, hitung persentase, dll), bantu dengan **langkah-langkah yang jelas**. Jika memungkinkan, jelaskan proses berpikirmu.`
@@ -69,7 +60,7 @@ export default async function handler(
         text: `Jika menjelaskan kode (HTML, CSS, JavaScript, Python, dsb), beri contoh kode dan penjelasan singkat.`
       },
       {
-        text: `Jangan asal jawab. Jika kamu tidak yakin, jawab jujur seperti "Sepertinya aku belum tahu pasti soal itu, boleh dijelaskan lebih detail?"`
+        text: `Jangan asal jawab. Jika kamu tidak yakin, jawab jujur seperti \"Sepertinya aku belum tahu pasti soal itu, boleh dijelaskan lebih detail?\"`
       },
       {
         text: `Ingat, kamu mewakili karya M. Roifan Aji Marzuki, Web Developer asal Balerejo, Bumiharjo, Glenmore, (https://kangajie.site). Pastikan setiap interaksimu mencerminkan semangat membantu dan ketulusan developer tersebut.`
@@ -115,8 +106,6 @@ export default async function handler(
   for (const model of models) {
     for (const apiKey of apiKeys) {
       try {
-        console.log(`🔑 Coba model=${model}, key=${apiKey?.slice(0,5)}...`);
-        
         const response = await axios.post(
           'https://openrouter.ai/api/v1/chat/completions',
           {
@@ -138,20 +127,11 @@ export default async function handler(
           }
         );
 
-        const data = response.data;
-
-        // 🔎 Cek kalau OpenRouter balas error meski status 200
-        if (data.error) {
-          throw new Error(data.error.message || "Unknown API error");
-        }
-
-        const aiReply = data.choices?.[0]?.message?.content || '...';
-        console.log(`✅ Berhasil pakai ${model} dengan key ${apiKey?.slice(0,5)}...`);
+        const aiReply = response.data.choices?.[0]?.message?.content || '...';
         return res.status(200).json({ reply: aiReply });
-
       } catch (error: any) {
         lastError = error.response?.data || error.message;
-        console.warn(`❌ Gagal pakai model ${model} dengan key ${apiKey?.slice(0,5)}...:`, lastError);
+        console.warn(`❌ Gagal pakai model ${model}:`, lastError);
       }
     }
   }
