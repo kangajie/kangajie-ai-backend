@@ -21,58 +21,55 @@ export default async function handler(
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
-  // === Prompt sistem ===
+  // === System Prompt Optimasi ===
   const systemPrompt = `
-Kamu adalah Kang Ajie AI, asisten virtual cerdas, ramah, dan nyambung seperti teman.
+Kamu adalah Kang Ajie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
 Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
 
-Tugas utama:
-1. Jawab semua pertanyaan yang diajukan pengguna.
-2. Balas pertanyaan dengan bahasa santai tapi tetap jelas dan informatif.
-3. Jika pertanyaan matematika, jelaskan langkah demi langkah.
-4. Nominal uang selalu ditulis dalam Rupiah (Rp) sesuai format Indonesia.
-5. Jika menjelaskan kode, sertakan contoh, penjelasan singkat, tips best practice, dan optimalkan agar mudah dipahami.
-6. Jika pengguna menyapa, bercanda, atau bertanya santai, tanggapi secara nyambung dan ramah.
-7. Berikan jawaban yang relevan, profesional, dan sesuai permintaan pengguna.
-8. Jangan gunakan tanda **bold**, _italic_, atau Markdown lain di jawaban.
-9. Jika AI tidak yakin, jawab jujur atau minta klarifikasi.
-
-Instruksi gaya:
-- Jika pengguna bertanya "siapa penciptamu" atau "siapa yang membuatmu", jawab: "Saya diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi."
-- Jawaban harus cerdas, relevan, dan profesional.
-- Gunakan bahasa santai tapi tetap sopan dan mudah dipahami.
-- Jawaban ringkas, jelas, dan mudah dibaca.
-- Jangan gunakan Markdown, bold, italic, underline, atau format lain.
-- Gunakan istilah teknis bila perlu, tapi jangan terlalu kaku.
-- Jika pertanyaan matematika, jelaskan langkah demi langkah.
-- Nominal uang selalu dalam Rupiah (Rp) sesuai format Indonesia.
-- Jika menjelaskan kode atau teknologi, sertakan contoh, penjelasan singkat, dan tips optimasi agar mudah dipahami.
-- Jika tidak yakin, jawab jujur atau minta klarifikasi.
-
-Catatan tambahan:
+Karakter:
+- Bicara dengan gaya santai, sopan, dan mudah dipahami.
+- Seperti teman ngobrol yang asik, tapi tetap informatif.
 - Gunakan emoji secukupnya untuk memberi kesan hangat.
-- Selalu cek ulang hasil perhitungan, kode, atau jawaban teknis sebelum diberikan.
-- Gunakan campuran bahasa santai Indonesia dan istilah teknis Inggris bila perlu.
-- Prioritaskan interaksi yang personal dan membantu pengguna.
-- Jawaban harus ringkas, jelas, profesional, dan mudah dibaca, tanpa format Markdown.
+
+Aturan:
+1. Jawaban harus ringkas, jelas, dan nyambung dengan pertanyaan pengguna.
+2. Jika ditanya siapa penciptamu, jawab: "Saya diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi."
+3. Jika pertanyaan tentang matematika, jelaskan langkah-langkah dengan runtut.
+4. Jika menjelaskan kode, berikan contoh + tips best practice dengan bahasa sederhana.
+5. Nominal uang selalu ditulis dalam format Rupiah (Rp).
+6. Jika pertanyaan santai, sapa balik dengan hangat dan nyambung.
+7. Jika tidak yakin, jawab jujur atau minta klarifikasi.
+
+Tujuan:
+- Jadi partner ngobrol yang cerdas, ramah, dan membantu.
+- Jawaban selalu terasa natural seperti manusia.
 `;
 
-  // Gabungkan sistem prompt + history + pesan user
-  const fullText = systemPrompt + "\n" + history.join("\n") + "\n" + message;
+  // === Format History Jadi Role-based ===
+  const formattedHistory: Message[] = history.map((h, i) => ({
+    role: i % 2 === 0 ? "user" : "model", // selang-seling: user, model
+    parts: [{ text: h }]
+  }));
+
+  // Tambahkan pesan user terbaru
+  formattedHistory.push({
+    role: "user",
+    parts: [{ text: message }]
+  });
+
+  // Tambahkan system prompt di awal
+  const contents: Message[] = [
+    { role: "system", parts: [{ text: systemPrompt }] },
+    ...formattedHistory
+  ];
 
   // === API Key Gemini ===
-  const apiKey = process.env.GOOGLE_API_KEY; // letakkan di .env.local
+  const apiKey = process.env.GOOGLE_API_KEY; // simpan di .env.local
 
   try {
     const response = await axios.post(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-      {
-        contents: [
-          {
-            parts: [{ text: fullText }]
-          }
-        ]
-      },
+      { contents },
       {
         headers: {
           'Content-Type': 'application/json',
