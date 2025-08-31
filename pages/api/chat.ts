@@ -21,7 +21,7 @@ export default async function handler(
 
   // === System Prompt ===
   const systemPrompt = `
-Kamu adalah Kang Ajie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
+Kamu adalah KangAjie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
 Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
 
 Karakter:
@@ -87,3 +87,4 @@ Tujuan:
     });
   }
 }
+
