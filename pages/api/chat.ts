@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
-type RequestData = { history: { role: "user" | "model"; text: string }[]; message: string };
+type RequestData = { history: string[]; message: string };
 
 export default async function handler(
   req: NextApiRequest,
@@ -21,7 +21,7 @@ export default async function handler(
 
   // === System Prompt ===
   const systemPrompt = `
-Kamu adalah KangAjie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
+Kamu adalah Kang Ajie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
 Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
 
 Karakter:
@@ -43,22 +43,18 @@ Tujuan:
 - Jawaban selalu terasa natural seperti manusia.
 `;
 
-  // === Format history jadi role-based ===
-  const formattedHistory = history.map((h) => ({
-    role: h.role,
-    parts: [{ text: h.text }]
-  }));
+  // === Gabungkan history jadi teks percakapan ===
+  const conversation = history.join("\n");
 
   // === Susun input untuk Gemini ===
   const contents = [
     {
-      role: "model", // ✅ taruh system prompt di sini, bukan user
-      parts: [{ text: systemPrompt }]
-    },
-    ...formattedHistory,
-    {
       role: "user",
-      parts: [{ text: message }]
+      parts: [
+        {
+          text: systemPrompt + "\n\nRiwayat percakapan:\n" + conversation + "\n\nUser: " + message
+        }
+      ]
     }
   ];
 
