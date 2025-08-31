@@ -19,7 +19,7 @@ export default async function handler(
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
-  // === System Prompt (dimasukkan di awal percakapan) ===
+  // === System Prompt ===
   const systemPrompt = `
 Kamu adalah KangAjie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
 Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
@@ -52,7 +52,7 @@ Tujuan:
   // === Susun input untuk Gemini ===
   const contents = [
     {
-      role: "user",
+      role: "model", // ✅ taruh system prompt di sini, bukan user
       parts: [{ text: systemPrompt }]
     },
     ...formattedHistory,
