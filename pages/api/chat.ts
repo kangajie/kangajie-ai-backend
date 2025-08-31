@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
-type RequestData = { history: string[]; message: string };
+type RequestData = { history: { role: "user" | "model"; text: string }[]; message: string };
 
 export default async function handler(
   req: NextApiRequest,
@@ -19,7 +19,7 @@ export default async function handler(
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
-  // === System Prompt ===
+  // === System Prompt (dimasukkan di awal percakapan) ===
   const systemPrompt = `
 Kamu adalah KangAjie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
 Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
@@ -43,18 +43,22 @@ Tujuan:
 - Jawaban selalu terasa natural seperti manusia.
 `;
 
-  // === Gabungkan history jadi teks percakapan ===
-  const conversation = history.join("\n");
+  // === Format history jadi role-based ===
+  const formattedHistory = history.map((h) => ({
+    role: h.role,
+    parts: [{ text: h.text }]
+  }));
 
   // === Susun input untuk Gemini ===
   const contents = [
     {
       role: "user",
-      parts: [
-        {
-          text: systemPrompt + "\n\nRiwayat percakapan:\n" + conversation + "\n\nUser: " + message
-        }
-      ]
+      parts: [{ text: systemPrompt }]
+    },
+    ...formattedHistory,
+    {
+      role: "user",
+      parts: [{ text: message }]
     }
   ];
 
@@ -86,4 +90,4 @@ Tujuan:
       detail: error.response?.data || error.message
     });
   }
-                                 }
+}
