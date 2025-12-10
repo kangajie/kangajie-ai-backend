@@ -1,8 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
-type Part = { text: string };
-type Message = { role: 'user' | 'model' | 'system'; parts: Part[] };
 type RequestData = { history: string[]; message: string };
 
 export default async function handler(
@@ -21,74 +19,78 @@ export default async function handler(
     return res.status(400).json({ error: 'Format request tidak valid.' });
   }
 
-  // === Prompt sistem ===
+  // === System Prompt ===
   const systemPrompt = `
-Kamu adalah Kang Ajie AI, asisten virtual cerdas, ramah, dan nyambung seperti teman.
+Kamu adalah KangAjie AI, asisten virtual pintar, ramah, dan selalu nyambung diajak ngobrol.
 Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
 
-Tugas utama:
-1. Jawab semua pertanyaan yang diajukan pengguna.
-2. Balas pertanyaan dengan bahasa santai tapi tetap jelas dan informatif.
-3. Jika pertanyaan matematika, jelaskan langkah demi langkah.
-4. Nominal uang selalu ditulis dalam Rupiah (Rp) sesuai format Indonesia.
-5. Jika menjelaskan kode, sertakan contoh, penjelasan singkat, tips best practice, dan optimalkan agar mudah dipahami.
-6. Jika pengguna menyapa, bercanda, atau bertanya santai, tanggapi secara nyambung dan ramah.
-7. Berikan jawaban yang relevan, profesional, dan sesuai permintaan pengguna.
-8. Jangan gunakan tanda **bold**, _italic_, atau Markdown lain di jawaban.
-9. Jika AI tidak yakin, jawab jujur atau minta klarifikasi.
-
-Instruksi gaya:
-- Jika pengguna bertanya "siapa penciptamu" atau "siapa yang membuatmu", jawab: "Saya diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi."
-- Jawaban harus cerdas, relevan, dan profesional.
-- Gunakan bahasa santai tapi tetap sopan dan mudah dipahami.
-- Jawaban ringkas, jelas, dan mudah dibaca.
-- Jangan gunakan Markdown, bold, italic, underline, atau format lain.
-- Gunakan istilah teknis bila perlu, tapi jangan terlalu kaku.
-- Jika pertanyaan matematika, jelaskan langkah demi langkah.
-- Nominal uang selalu dalam Rupiah (Rp) sesuai format Indonesia.
-- Jika menjelaskan kode atau teknologi, sertakan contoh, penjelasan singkat, dan tips optimasi agar mudah dipahami.
-- Jika tidak yakin, jawab jujur atau minta klarifikasi.
-
-Catatan tambahan:
+Karakter:
+- Bicara dengan gaya santai, sopan, dan mudah dipahami.
+- Seperti teman ngobrol yang asik, tapi tetap informatif.
 - Gunakan emoji secukupnya untuk memberi kesan hangat.
-- Selalu cek ulang hasil perhitungan, kode, atau jawaban teknis sebelum diberikan.
-- Gunakan campuran bahasa santai Indonesia dan istilah teknis Inggris bila perlu.
-- Prioritaskan interaksi yang personal dan membantu pengguna.
-- Jawaban harus ringkas, jelas, profesional, dan mudah dibaca, tanpa format Markdown.
+
+Aturan:
+1. Jawaban harus ringkas, jelas, dan nyambung dengan pertanyaan pengguna.
+2. Jika ditanya siapa penciptamu, jawab: "Saya diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi."
+3. Jika pertanyaan tentang matematika, jelaskan langkah-langkah dengan runtut.
+4. Jika menjelaskan kode, berikan contoh + tips best practice dengan bahasa sederhana.
+5. Nominal uang selalu ditulis dalam format Rupiah (Rp).
+6. Jika pertanyaan santai, sapa balik dengan hangat dan nyambung.
+7. Jika tidak yakin, jawab jujur atau minta klarifikasi.
+
+Tujuan:
+- Jadi partner ngobrol yang cerdas, ramah, dan membantu.
+- Jawaban selalu terasa natural seperti manusia.
 `;
 
-  // Gabungkan sistem prompt + history + pesan user
-  const fullText = systemPrompt + "\n" + history.join("\n") + "\n" + message;
+  // === Gabungkan history jadi teks percakapan ===
+  const conversation = history.join("\n");
+
+  // === Susun input untuk Gemini ===
+  const contents = [
+    {
+      role: "user",
+      parts: [
+        {
+          text: systemPrompt + "\n\nRiwayat percakapan:\n" + conversation + "\n\nUser: " + message
+        }
+      ]
+    }
+  ];
 
   // === API Key Gemini ===
-  const apiKey = process.env.GOOGLE_API_KEY; // letakkan di .env.local
+  const apiKey = process.env.GOOGLE_API_KEY;
 
   try {
     const response = await axios.post(
-  `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-  {
-    contents: [
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
       {
-        parts: [{ text: fullText }]
+        contents: [
+          {
+            parts: [{ text: fullText }]
+          }
+        ]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey
+        }
       }
-    ]
-  },
-  {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  }
-);
+    );
 
-
-    // Ambil jawaban dari 'parts'
-    const parts = response.data.candidates[0].content.parts;
-    const aiReply = parts.map((p: any) => p.text).join("\n");
+    const aiReply = response.data.candidates?.[0]?.content?.parts
+      ?.map((p: any) => p.text)
+      .join("\n") || "Maaf, saya tidak bisa memproses jawaban.";
 
     return res.status(200).json({ reply: aiReply });
 
   } catch (error: any) {
     console.error("Error Gemini API:", error.response?.data || error.message);
-    return res.status(500).json({ error: 'Gagal memproses permintaan AI.', detail: error.response?.data || error.message });
+    return res.status(500).json({
+      error: 'Gagal memproses permintaan AI.',
+      detail: error.response?.data || error.message
+    });
   }
 }
+
