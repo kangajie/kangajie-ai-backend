@@ -65,21 +65,21 @@ Catatan tambahan:
 
   try {
     const response = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+  `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+  {
+    contents: [
       {
-        contents: [
-          {
-            parts: [{ text: fullText }]
-          }
-        ]
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey
-        }
+        parts: [{ text: fullText }]
       }
-    );
+    ]
+  },
+  {
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  }
+);
+
 
     // Ambil jawaban dari 'parts'
     const parts = response.data.candidates[0].content.parts;
