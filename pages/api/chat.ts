@@ -1,95 +1,155 @@
+// @ts-nocheck
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
+import axios from 'axios';
 
-// Inisialisasi Google AI Client
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
+// Import Library Pembaca File (Kita pakai require biar gak error TS)
+const mammoth = require('mammoth');
+const XLSX = require('xlsx');
+const officeParser = require('officeparser');
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // === 1. CORS Setup (Penting agar frontend bisa akses) ===
-  res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site'); // Ganti * jika masih dev
+type Part = { text?: string; inline_data?: { mime_type: string; data: string } };
+type RequestData = { history: any[]; message: string; fileData?: string; mimeType?: string };
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  // === CORS Setup ===
+  res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  try {
-    // === 2. Tangkap Data dari Frontend ===
-    const { message, history, fileData, mimeType } = req.body;
+  // Ambil data termasuk fileData dan mimeType
+  const { history, message, fileData, mimeType } = req.body as RequestData;
 
-    // === 3. Konfigurasi Model ===
-    // Gunakan 'gemini-1.5-flash' (Cepat, Murah, Support Gambar/PDF)
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      systemInstruction: {
-        role: "system",
-        parts: [{ text: `
-          Kamu adalah Kang Ajie AI, asisten virtual cerdas, ramah, dan nyambung seperti teman.
-          Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
+  // === 1. SYSTEM PROMPT (Tetap Punya Kamu) ===
+  const systemPrompt = `
+    Kamu adalah Kang Ajie AI, asisten virtual cerdas, ramah, dan nyambung seperti teman.
+    Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
 
-          Aturan Utama:
-          1. Jawab santai, jelas, informatif.
-          2. Matematika: Jelaskan langkah demi langkah.
-          3. Uang: Gunakan format Rupiah (Rp).
-          4. Kode: Berikan contoh & best practice.
-          5. Style: JANGAN gunakan Markdown Bold (**teks**) atau Italic (*teks*) di narasi biasa agar bersih. 
-             TAPI, untuk Kode Program (coding), WAJIB gunakan Code Block (\`\`\`) agar mudah disalin.
-          6. Jika ada gambar/dokumen, analisislah sesuai permintaan user.
-        `}]
-      }
-    });
+    Tugas utama:
+    1. Jawab santai tapi jelas dan informatif.
+    2. Matematika: Jelaskan langkah demi langkah.
+    3. Uang: Format Rupiah (Rp).
+    4. Kode: WAJIB gunakan Code Block (\`\`\`).
+    5. Jangan gunakan Bold/Italic, TAPI WAJIB Code Block untuk kodingan.
+    6. Analisis file yang dikirim dengan detail.
+  `;
 
-    // === 4. Proses Chat & History ===
-    // Ubah format history frontend ke format Gemini SDK
-    // Frontend mengirim: [{role: 'user', parts: [{text: '...'}]}, ...]
-    // Kita pastikan formatnya aman
-    const chatHistory = (history || []).map((msg: any) => ({
-      role: msg.role === 'ai' ? 'model' : 'user', // Pastikan mapping role benar
-      parts: msg.parts.map((p: any) => ({ text: p.text })) // Hanya ambil teks untuk history (gambar lama tidak perlu dikirim ulang untuk hemat token)
-    }));
+  // === 2. LOGIKA BACA FILE (EXTRACTION) ===
+  let fileTextContext = ""; // Penampung teks dari Word/Excel/PPT
+  let imagePart = null;     // Penampung untuk Gambar/PDF (Inline Data)
 
-    const chatSession = model.startChat({
-      history: chatHistory,
-      generationConfig: {
-        maxOutputTokens: 1000,
-      },
-    });
+  if (fileData && mimeType) {
+    // Bersihkan header base64
+    const cleanBase64 = fileData.replace(/^data:.+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
 
-    // === 5. Siapkan Pesan Baru (Teks + Gambar jika ada) ===
-    let parts: any[] = [];
-
-    // A. Cek apakah ada file (Gambar/PDF)
-    if (fileData && mimeType) {
-      // Frontend mengirim format: "data:image/png;base64,Base64String..."
-      // Kita harus membuang header "data:image/..." untuk mendapatkan murni base64
-      const base64Data = fileData.split(',')[1]; 
-
-      parts.push({
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType
+    // A. GAMBAR & PDF (Untuk dikirim Native via JSON)
+    if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+      imagePart = {
+        inline_data: {
+          mime_type: mimeType,
+          data: cleanBase64
         }
-      });
+      };
+    }
+    
+    // B. WORD (.docx) -> Ekstrak jadi Teks
+    else if (mimeType.includes('word') || mimeType.includes('doc')) {
+      try {
+        const result = await mammoth.extractRawText({ buffer });
+        fileTextContext = `\n\n[ISI FILE WORD]:\n${result.value}\n`;
+      } catch (e) { console.error("Word Fail:", e); }
     }
 
-    // B. Masukkan Teks User
-    if (message) {
-      parts.push({ text: message });
+    // C. EXCEL (.xlsx) -> Ekstrak jadi CSV Teks
+    else if (mimeType.includes('sheet') || mimeType.includes('excel')) {
+      try {
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+        fileTextContext = `\n\n[ISI FILE EXCEL]:\n${csv}\n`;
+      } catch (e) { console.error("Excel Fail:", e); }
     }
 
-    // === 6. Kirim ke AI ===
-    const result = await chatSession.sendMessage(parts);
-    const response = await result.response;
-    const textAnswer = response.text();
+    // D. PPT (.pptx) -> Ekstrak jadi Teks
+    else if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) {
+      try {
+        const pptText = await new Promise((resolve, reject) => {
+          officeParser.parseOfficeBuffer(buffer, (data, err) => {
+            if (err) reject(err); else resolve(data);
+          });
+        });
+        fileTextContext = `\n\n[ISI FILE PPT]:\n${pptText}\n`;
+      } catch (e) { console.error("PPT Fail:", e); }
+    }
 
-    // === 7. Kirim Balasan ke Frontend ===
-    return res.status(200).json({ reply: textAnswer });
+    // E. Text/Coding -> Decode Teks
+    else if (mimeType.startsWith('text/') || mimeType.includes('json') || mimeType.includes('xml')) {
+      fileTextContext = `\n\n[ISI FILE TEKS]:\n${buffer.toString('utf-8')}\n`;
+    }
+  }
+
+  // === 3. RAKIT TEXT PROMPT ===
+  // Gabungkan: System Prompt + History (jika array string) + Pesan User + Isi File (Jika ada)
+  
+  // Tips: History biasanya array object, kita ambil text-nya saja untuk digabung ke prompt sederhana
+  // Atau jika format history kamu string array, biarkan join.
+  let historyText = "";
+  if (Array.isArray(history)) {
+      // Cek apakah history isinya string atau object
+      historyText = history.map(h => (typeof h === 'string' ? h : h.parts?.[0]?.text || "")).join("\n");
+  }
+
+  const finalPromptText = `${systemPrompt}\n${historyText}\nUser: ${message}\n${fileTextContext}`;
+
+  // === 4. RAKIT PARTS UNTUK AXIOS ===
+  const partsToSend: any[] = [];
+  
+  // Jika ada gambar/PDF, masukkan duluan
+  if (imagePart) {
+    partsToSend.push(imagePart);
+  }
+  
+  // Masukkan teks prompt
+  partsToSend.push({ text: finalPromptText });
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+
+  try {
+    // === 5. KIRIM KE GEMINI (AXIOS) ===
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        contents: [
+          {
+            parts: partsToSend
+          }
+        ]
+      },
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    // Ambil jawaban
+    const candidates = response.data.candidates;
+    if (!candidates || candidates.length === 0) {
+      return res.status(200).json({ reply: "Maaf, saya tidak bisa memberikan jawaban saat ini." });
+    }
+
+    const aiReply = candidates[0].content.parts.map((p: any) => p.text).join("\n");
+    return res.status(200).json({ reply: aiReply });
 
   } catch (error: any) {
-    console.error("Error AI Backend:", error);
+    console.error("Error Axios Gemini:", error.response?.data || error.message);
     return res.status(500).json({ 
-      error: 'Terjadi kesalahan pada AI.', 
-      details: error.message 
+      error: 'Gagal memproses.', 
+      detail: error.response?.data || error.message 
     });
   }
 }
