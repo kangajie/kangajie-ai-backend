@@ -1,22 +1,17 @@
-// @ts-nocheck
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
-import mammoth from 'mammoth'; // Baca Word
-import * as XLSX from 'xlsx';  // Baca Excel
 
-// Kita skip officeparser dulu untuk mencegah server hang
-// import officeParser from 'officeparser'; 
-
+// 1. CONFIG: WAJIB ADA untuk mengizinkan upload file > 1MB
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '10mb', // Penting! Izinkan file agak besar
+      sizeLimit: '10mb', // Kita naikkan jadi 10MB biar tidak error saat upload
     },
   },
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // CORS
+  // === CORS Setup ===
   res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -24,118 +19,86 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  console.log("1. Request Masuk..."); // LOGGING
-
   try {
     const { history, message, fileData, mimeType } = req.body;
     const apiKey = process.env.GOOGLE_API_KEY;
 
-    if (!apiKey) throw new Error("API Key hilang!");
-
-    // === SYSTEM PROMPT ===
-    const systemPrompt = `
-      Kamu adalah Kang Ajie AI. Dibuat oleh M. Roifan Aji Marzuki (Web Developer, Glenmore).
-      Jawab santai, jelas, Rupiah (Rp), dan gunakan Code Block (\`\`\`) untuk kodingan.
-    `;
-
-    // === LOGIKA FILE ===
-    let fileTextContext = "";
-    let inlineImagePart = null;
-
-    if (fileData && mimeType) {
-      console.log(`2. Ada file terdeteksi: ${mimeType}`); // LOGGING
-      
-      const cleanBase64 = fileData.replace(/^data:.+;base64,/, '');
-      const buffer = Buffer.from(cleanBase64, 'base64');
-
-      // A. GAMBAR / PDF -> Kirim sebagai Inline Data
-      if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
-        console.log("   - Tipe Visual (Gambar/PDF)");
-        inlineImagePart = {
-          inline_data: {
-            mime_type: mimeType,
-            data: cleanBase64
-          }
-        };
-      } 
-      // B. WORD -> Ekstrak Teks
-      else if (mimeType.includes('word') || mimeType.includes('doc')) {
-        console.log("   - Tipe Word, mencoba ekstrak...");
-        try {
-          const result = await mammoth.extractRawText({ buffer });
-          fileTextContext = `\n\n[ISI FILE WORD]:\n${result.value}\n`;
-        } catch (e) {
-          console.error("   ! Gagal baca Word:", e);
-          fileTextContext = "\n[Gagal membaca file Word, mungkin file rusak]\n";
-        }
-      }
-      // C. EXCEL -> Ekstrak Teks
-      else if (mimeType.includes('sheet') || mimeType.includes('excel')) {
-        console.log("   - Tipe Excel, mencoba ekstrak...");
-        try {
-          const workbook = XLSX.read(buffer, { type: 'buffer' });
-          const sheetName = workbook.SheetNames[0];
-          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-          fileTextContext = `\n\n[ISI FILE EXCEL]:\n${csv}\n`;
-        } catch (e) {
-          console.error("   ! Gagal baca Excel:", e);
-        }
-      }
-      // D. PPT (SKIP DULU AGAR STABIL)
-      else if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) {
-         fileTextContext = "\n[Info: Untuk file PPT, mohon 'Save As PDF' lalu upload ulang agar bisa saya baca]\n";
-      }
-      // E. TEXT
-      else if (mimeType.startsWith('text/') || mimeType.includes('json')) {
-        fileTextContext = `\n\n[ISI FILE TEKS]:\n${buffer.toString('utf-8')}\n`;
-      }
+    if (!apiKey) {
+      return res.status(500).json({ error: "API Key Google hilang di server." });
     }
 
-    // === RAKIT PROMPT (GAYA AXIOS LAMA) ===
-    console.log("3. Merakit Prompt..."); // LOGGING
+    // === 2. SYSTEM PROMPT ===
+    const systemPrompt = `
+      Kamu adalah Kang Ajie AI. Dibuat oleh M. Roifan Aji Marzuki (Web Developer, Glenmore).
+      Jawab santai, jelas, gunakan Rupiah (Rp), dan Code Block (\`\`\`) untuk kodingan.
+      Jangan gunakan Bold/Italic berlebihan.
+    `;
+
+    // === 3. SIAPKAN DATA UNTUK AXIOS ===
+    let contentsParts = [];
+
+    // A. Masukkan File (Jika Ada)
+    // Gemini Native support: Image (PNG/JPG) & PDF
+    if (fileData && mimeType) {
+      // Bersihkan header "data:image/png;base64," agar murni base64
+      const cleanBase64 = fileData.replace(/^data:.+;base64,/, '');
+      
+      contentsParts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: cleanBase64
+        }
+      });
+    }
+
+    // B. Gabungkan History & Pesan User ke Prompt Teks
+    // (Cara manual Axios paling aman: gabung jadi satu string panjang context)
+    let contextHistory = "";
+    if (Array.isArray(history) && history.length > 0) {
+      contextHistory = history.map(h => {
+        // Handle format history yang mungkin berbeda
+        const text = typeof h === 'string' ? h : (h.parts?.[0]?.text || "");
+        const role = h.role === 'model' ? 'AI' : 'User';
+        return `${role}: ${text}`;
+      }).join("\n");
+    }
+
+    const finalPrompt = `${systemPrompt}\n\nRiwayat Chat:\n${contextHistory}\n\nUser Baru: ${message}`;
     
-    // Gabung history jadi satu string panjang (ini cara paling aman buat Axios manual)
-    const historyText = Array.isArray(history) 
-      ? history.map(h => (typeof h === 'string' ? h : h.parts?.[0]?.text || "")).join("\n") 
-      : "";
+    // Masukkan Teks ke Parts
+    contentsParts.push({ text: finalPrompt });
 
-    // Prompt Akhir
-    const finalPrompt = `${systemPrompt}\n${historyText}\nUser: ${message}\n${fileTextContext}`;
+    // === 4. KIRIM KE GOOGLE (Versi 1.5 Flash - Paling Stabil) ===
+    // Saya pakai 1.5 dulu. Kalau ini jalan, baru nanti Anda ubah ke 2.5.
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    // Susun Parts untuk JSON Gemini
-    const parts = [];
-    if (inlineImagePart) parts.push(inlineImagePart); // Masukkan gambar/pdf kalau ada
-    parts.push({ text: finalPrompt });                // Masukkan teks
-
-    // === KIRIM AXIOS ===
-    console.log("4. Mengirim ke Google Gemini..."); // LOGGING
-    
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      url,
       {
-        contents: [{ parts: parts }]
+        contents: [{ parts: contentsParts }]
       },
       {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 60000 // Timeout 60 detik biar gak gampang putus
+        timeout: 60000 // 60 detik timeout
       }
     );
 
-    console.log("5. Dapat Balasan!"); // LOGGING
-
-    if (response.data?.candidates?.[0]?.content?.parts) {
-      const reply = response.data.candidates[0].content.parts.map((p: any) => p.text).join("\n");
-      return res.status(200).json({ reply });
+    // === 5. AMBIL JAWABAN ===
+    const candidates = response.data?.candidates;
+    if (candidates && candidates.length > 0) {
+      const aiReply = candidates[0].content.parts.map((p: any) => p.text).join("\n");
+      return res.status(200).json({ reply: aiReply });
     } else {
-      return res.status(200).json({ reply: "Maaf, tidak ada respon dari AI." });
+      return res.status(200).json({ reply: "Maaf, AI tidak memberikan respon (Kosong)." });
     }
 
   } catch (error: any) {
-    console.error("!!! ERROR BACKEND !!!", error.response?.data || error.message);
+    console.error("ERROR BACKEND:", error.response?.data || error.message);
     
-    // Kirim pesan error ke frontend biar muncul di chat bubble
-    return res.status(200).json({ 
-      reply: `⚠️ **Sistem Error:**\n${error.message || "Gagal memproses permintaan."}\n(Cek Terminal untuk detail)` 
+    // Tampilkan error ke frontend agar kita tahu salahnya dimana
+    return res.status(500).json({ 
+      error: 'Gagal memproses.', 
+      details: error.response?.data?.error?.message || error.message 
     });
   }
 }
