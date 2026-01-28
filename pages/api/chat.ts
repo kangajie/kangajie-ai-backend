@@ -1,127 +1,94 @@
-// @ts-nocheck
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 
-// Gunakan require untuk library tanpa types agar tidak error
-const mammoth = require('mammoth');
-const XLSX = require('xlsx');
-const officeParser = require('officeparser');
+type Part = { text: string };
+type Message = { role: 'user' | 'model' | 'system'; parts: Part[] };
+type RequestData = { history: string[]; message: string };
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // === 1. CORS Setup ===
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  // === CORS Setup ===
   res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
+  const { history, message } = req.body as RequestData;
+  if (!history || !Array.isArray(history) || !message) {
+    return res.status(400).json({ error: 'Format request tidak valid.' });
+  }
+
+  // === Prompt sistem ===
+  const systemPrompt = `
+Kamu adalah Kang Ajie AI, asisten virtual cerdas, ramah, dan nyambung seperti teman.
+Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
+
+Tugas utama:
+1. Jawab semua pertanyaan yang diajukan pengguna.
+2. Balas pertanyaan dengan bahasa santai tapi tetap jelas dan informatif.
+3. Jika pertanyaan matematika, jelaskan langkah demi langkah.
+4. Nominal uang selalu ditulis dalam Rupiah (Rp) sesuai format Indonesia.
+5. Jika menjelaskan kode, sertakan contoh, penjelasan singkat, tips best practice, dan optimalkan agar mudah dipahami.
+6. Jika pengguna menyapa, bercanda, atau bertanya santai, tanggapi secara nyambung dan ramah.
+7. Berikan jawaban yang relevan, profesional, dan sesuai permintaan pengguna.
+8. Jangan gunakan tanda **bold**, _italic_, atau Markdown lain di jawaban.
+9. Jika AI tidak yakin, jawab jujur atau minta klarifikasi.
+
+Instruksi gaya:
+- Jika pengguna bertanya "siapa penciptamu" atau "siapa yang membuatmu", jawab: "Saya diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi."
+- Jawaban harus cerdas, relevan, dan profesional.
+- Gunakan bahasa santai tapi tetap sopan dan mudah dipahami.
+- Jawaban ringkas, jelas, dan mudah dibaca.
+- Jangan gunakan Markdown, bold, italic, underline, atau format lain.
+- Gunakan istilah teknis bila perlu, tapi jangan terlalu kaku.
+- Jika pertanyaan matematika, jelaskan langkah demi langkah.
+- Nominal uang selalu dalam Rupiah (Rp) sesuai format Indonesia.
+- Jika menjelaskan kode atau teknologi, sertakan contoh, penjelasan singkat, dan tips optimasi agar mudah dipahami.
+- Jika tidak yakin, jawab jujur atau minta klarifikasi.
+
+Catatan tambahan:
+- Gunakan emoji secukupnya untuk memberi kesan hangat.
+- Selalu cek ulang hasil perhitungan, kode, atau jawaban teknis sebelum diberikan.
+- Gunakan campuran bahasa santai Indonesia dan istilah teknis Inggris bila perlu.
+- Prioritaskan interaksi yang personal dan membantu pengguna.
+- Jawaban harus ringkas, jelas, profesional, dan mudah dibaca, tanpa format Markdown.
+`;
+
+  // Gabungkan sistem prompt + history + pesan user
+  const fullText = systemPrompt + "\n" + history.join("\n") + "\n" + message;
+
+  // === API Key Gemini ===
+  const apiKey = process.env.GOOGLE_API_KEY; // letakkan di .env.local
+
   try {
-    const { message, history, fileData, mimeType } = req.body;
-
-    // === 2. Konfigurasi Model (FIXED TYPESCRIPT ERROR) ===
-    // Kita gunakan 'any' untuk mematikan validasi ketat pada config model
-    const modelConfig: any = {
-      model: "gemini-2.5-flash",
-      systemInstruction: {
-        parts: [{ text: `
-          Kamu adalah Kang Ajie AI, asisten virtual cerdas.
-          Dibuat oleh M. Roifan Aji Marzuki (Web Developer, Glenmore Banyuwangi).
-          
-          Instruksi:
-          1. Jawab santai, jelas, informatif.
-          2. Matematika: Langkah demi langkah.
-          3. Uang: Format Rupiah (Rp).
-          4. Kode: WAJIB pakai Code Block (\`\`\`).
-          5. Analisis file secara mendalam jika ada.
-        `}]
+    const response = await axios.post(
+  `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+  {
+    contents: [
+      {
+        parts: [{ text: fullText }]
       }
-    };
-
-    const model = genAI.getGenerativeModel(modelConfig);
-
-    let promptParts: any[] = [];
-    let fileContext = "";
-
-    // === 3. LOGIKA BACA FILE ===
-    if (fileData && mimeType) {
-      const base64Data = fileData.replace(/^data:.+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
-
-      // A. GAMBAR & PDF (Vision)
-      if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
-        promptParts.push({
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType
-          }
-        });
-      }
-      
-      // B. WORD (.docx)
-      else if (mimeType.includes('word') || mimeType.includes('doc')) {
-        try {
-          const result = await mammoth.extractRawText({ buffer: buffer });
-          fileContext = `\n\n[ISI FILE WORD]:\n${result.value}\n`;
-        } catch (e: any) { console.error("Word Error:", e.message); }
-      }
-
-      // C. EXCEL (.xlsx)
-      else if (mimeType.includes('sheet') || mimeType.includes('excel')) {
-        try {
-          const workbook = XLSX.read(buffer, { type: 'buffer' });
-          const sheetName = workbook.SheetNames[0];
-          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-          fileContext = `\n\n[ISI FILE EXCEL]:\n${csv}\n`;
-        } catch (e: any) { console.error("Excel Error:", e.message); }
-      }
-
-      // D. POWERPOINT (.pptx) - FIXED ERROR
-      else if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) {
-        try {
-          const pptText = await new Promise((resolve, reject) => {
-            // Gunakan library officeParser yang sudah di-require
-            officeParser.parseOfficeBuffer(buffer, (data: any, err: any) => {
-              if (err) reject(err);
-              else resolve(data);
-            });
-          });
-          fileContext = `\n\n[ISI FILE PPT (Teks Only)]:\n${pptText}\n`;
-        } catch (e: any) { 
-          console.error("PPT Error:", e);
-          fileContext = "\n[Sistem: Gagal baca PPT. Coba ubah ke PDF]\n";
-        }
-      }
-
-      // E. TEXT / KODING
-      else if (mimeType.startsWith('text/') || mimeType.includes('json') || mimeType.includes('xml')) {
-        fileContext = `\n\n[ISI FILE TEKS]:\n${buffer.toString('utf-8')}\n`;
-      }
+    ]
+  },
+  {
+    headers: {
+      'Content-Type': 'application/json'
     }
+  }
+);
 
-    // === 4. GABUNG PESAN ===
-    const finalMessage = (message || "Jelaskan isi file ini.") + fileContext;
-    promptParts.push({ text: finalMessage });
 
-    // === 5. KIRIM KE AI ===
-    const chatHistory = (history || []).map((msg: any) => ({
-      role: msg.role === 'ai' || msg.role === 'model' ? 'model' : 'user',
-      parts: msg.parts.map((p: any) => ({ text: p.text }))
-    }));
+    // Ambil jawaban dari 'parts'
+    const parts = response.data.candidates[0].content.parts;
+    const aiReply = parts.map((p: any) => p.text).join("\n");
 
-    const chatSession = model.startChat({ history: chatHistory });
-    const result = await chatSession.sendMessage(promptParts);
-    const textAnswer = result.response.text();
-
-    return res.status(200).json({ reply: textAnswer });
+    return res.status(200).json({ reply: aiReply });
 
   } catch (error: any) {
-    console.error("🔥 ERROR:", error);
-    return res.status(500).json({ 
-      error: 'Backend Error', 
-      details: error.message || String(error)
-    });
+    console.error("Error Gemini API:", error.response?.data || error.message);
+    return res.status(500).json({ error: 'Gagal memproses permintaan AI.', detail: error.response?.data || error.message });
   }
 }
