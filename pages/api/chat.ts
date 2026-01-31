@@ -160,19 +160,67 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // === GENERATE JUDUL (Pakai Key yang tadi berhasil) ===
+  // let generatedTitle = null;
+  // if (!history || history.length <= 1) {
+  //    try {
+  //      const titleRes = await axios.post(
+  //         `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${activeKey}`,
+  //         { 
+  //           contents: [{ parts: [{ text: `Buatkan judul sangat pendek (3-4 kata) untuk topik ini: "${message}". Tanpa tanda kutip.` }] }] 
+  //         },
+  //         { headers: { 'Content-Type': 'application/json' } }
+  //      );
+  //      generatedTitle = titleRes.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().replace(/[*"]/g, '');
+  //    } catch (e) {
+  //      console.error("Gagal buat judul:", e);
+  //    }
+  // }
+
+  // versi galak
+  // === GENERATE JUDUL (UPDATE: LEBIH STRICT/KETAT) ===
   let generatedTitle = null;
+  
+  // Hanya generate jika ini adalah pesan pertama (history kosong atau panjang <= 1)
   if (!history || history.length <= 1) {
      try {
+       console.log("Sedang membuat judul untuk:", message); // Debugging
+
        const titleRes = await axios.post(
           `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${activeKey}`,
           { 
-            contents: [{ parts: [{ text: `Buatkan judul sangat pendek (3-4 kata) untuk topik ini: "${message}". Tanpa tanda kutip.` }] }] 
+            contents: [{ parts: [{ 
+                // --- BAGIAN INI YANG DIPERBAIKI ---
+                text: `Tugasmu adalah membuat LABEL TOPIK.
+                
+                Aturan:
+                1. Maksimal 3-4 kata saja.
+                2. JANGAN membuat kalimat lengkap.
+                3. JANGAN mengulang pertanyaan user.
+                4. Langsung ke inti (Keywords).
+                5. Jangan pakai tanda kutip.
+                
+                Contoh Input: "Bagaimana cara membuat nasi goreng yang enak?"
+                Output Kamu: "Resep Nasi Goreng"
+                
+                Contoh Input: "Saya mau belajar coding python dari nol"
+                Output Kamu: "Belajar Python Dasar"
+
+                Input User: "${message}"` 
+            }] }] 
           },
           { headers: { 'Content-Type': 'application/json' } }
        );
-       generatedTitle = titleRes.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().replace(/[*"]/g, '');
+       
+       // Bersihkan hasil (hapus spasi berlebih, enter, atau simbol aneh)
+       generatedTitle = titleRes.data?.candidates?.[0]?.content?.parts?.[0]?.text
+           ?.trim()
+           .replace(/[*"`]/g, '') // Hapus tanda kutip atau bold
+           .replace(/\n/g, ' ');  // Hapus enter jika ada
+           
+       console.log("Judul Terbuat:", generatedTitle); // Cek di terminal server
+
      } catch (e) {
-       console.error("Gagal buat judul:", e);
+       console.error("Gagal buat judul:", e.message);
      }
   }
 
