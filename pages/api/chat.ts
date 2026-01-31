@@ -40,7 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // === [LOGIKA BARU] ROTASI API KEY ===
   // Masukkan semua key kamu ke dalam Array ini
   const apiKeys = [
-    process.env.GOOGLE_API_KEY,   // Key 1
+    process.env.GOOGLE_API_KEY_1,   // Key 1
     process.env.GOOGLE_API_KEY_2, // Key 2
     process.env.GOOGLE_API_KEY_3,  // Key 3
     process.env.GOOGLE_API_KEY_4  // Key 4
