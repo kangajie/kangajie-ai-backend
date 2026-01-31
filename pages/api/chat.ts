@@ -1,94 +1,181 @@
+// @ts-nocheck
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
-type Part = { text: string };
-type Message = { role: 'user' | 'model' | 'system'; parts: Part[] };
-type RequestData = { history: string[]; message: string };
+// Library Pembaca File
+const mammoth = require('mammoth');
+const XLSX = require('xlsx');
+const officeParser = require('officeparser');
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  // === CORS Setup ===
+// === DEFINISI TIPE ===
+type Part = { text?: string; inline_data?: { mime_type: string; data: string } };
+type Message = { role: 'user' | 'model'; parts: Part[] | string; message?: string };
+type RequestData = { 
+  history: Message[]; 
+  message: string; 
+  fileData?: string; 
+  mimeType?: string; 
+  userName?: string; 
+};
+
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // === CORS ===
   res.setHeader('Access-Control-Allow-Origin', 'https://ai.kangajie.site');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  const { history, message } = req.body as RequestData;
-  if (!history || !Array.isArray(history) || !message) {
-    return res.status(400).json({ error: 'Format request tidak valid.' });
+  const { history, message, fileData, mimeType, userName } = req.body as RequestData;
+
+  // === [LOGIKA BARU] ROTASI API KEY ===
+  // Masukkan semua key kamu ke dalam Array ini
+  const apiKeys = [
+    process.env.GOOGLE_API_KEY,   // Key 1
+    process.env.GOOGLE_API_KEY_2, // Key 2
+    process.env.GOOGLE_API_KEY_3,  // Key 3
+    process.env.GOOGLE_API_KEY_4  // Key 4
+  ].filter(key => key); // Filter biar gak error kalau ada yg kosong
+
+  if (apiKeys.length === 0) return res.status(500).json({ error: 'Tidak ada API Key yang tersedia.' });
+
+  // Setup Nama User
+  const userPanggilan = userName || "Sobat AI";
+
+  // === SYSTEM PROMPT ===
+  const systemPrompt = `
+    Kamu adalah Kang Ajie AI.
+    Tugasmu adalah membantu menjawab pertanyaan, memberikan informasi, dan berdiskusi dengan pengguna secara ramah dan informatif.
+    kamu diciptakan oleh M. Roifan Aji Marzuki berasal dari Glenmore, Banyuwangi, Indonesia.
+    
+    INFORMASI LAWAN BICARA:
+    Kamu sedang berbicara dengan: "${userPanggilan}".
+    Sapa dia dengan namanya sesekali agar terasa akrab.
+    
+    Gaya: Santai, Jelas, Informatif.
+  `;
+
+  // === PROSES FILE ===
+  let fileTextContext = "";
+  let visualPart = null;
+
+  if (fileData && mimeType) {
+    try {
+      const cleanBase64 = fileData.replace(/^data:.+;base64,/, '');
+      const buffer = Buffer.from(cleanBase64, 'base64');
+
+      if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+        visualPart = { inline_data: { mime_type: mimeType, data: cleanBase64 } };
+      } else if (mimeType.includes('word')) {
+        const result = await mammoth.extractRawText({ buffer });
+        fileTextContext = `\n\n[ISI FILE WORD]:\n${result.value}\n`;
+      } else if (mimeType.includes('sheet') || mimeType.includes('excel')) {
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+        fileTextContext = `\n\n[ISI FILE EXCEL]:\n${csv}\n`;
+      } else if (mimeType.includes('presentation')) {
+        const pptText = await new Promise((resolve, reject) => {
+           officeParser.parseOfficeBuffer(buffer, (data, err) => { if (err) reject(err); else resolve(data); });
+        });
+        fileTextContext = `\n\n[ISI SLIDE PPT]:\n${pptText}\n`;
+      } else if (mimeType.startsWith('text/')) {
+        fileTextContext = `\n\n[ISI FILE TEKS]:\n${buffer.toString('utf-8')}\n`;
+      }
+    } catch (e) { console.error("File Read Error:", e); }
   }
 
-  // === Prompt sistem ===
-  const systemPrompt = `
-Kamu adalah Kang Ajie AI, asisten virtual cerdas, ramah, dan nyambung seperti teman.
-Kamu diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi.
+  // === RAKIT PROMPT ===
+  let historyText = "";
+  if (Array.isArray(history) && history.length > 0) {
+    historyText = history.map(h => {
+      let text = "";
+      if (typeof h === 'string') text = h;
+      else if (typeof h.message === 'string') text = h.message;
+      else if (Array.isArray(h.parts) && h.parts.length > 0 && h.parts[0].text) text = h.parts[0].text;
+      
+      const role = h.role === 'model' ? 'KangAjie' : 'User';
+      return `${role}: ${text}`;
+    }).join("\n");
+  }
 
-Tugas utama:
-1. Jawab semua pertanyaan yang diajukan pengguna.
-2. Balas pertanyaan dengan bahasa santai tapi tetap jelas dan informatif.
-3. Jika pertanyaan matematika, jelaskan langkah demi langkah.
-4. Nominal uang selalu ditulis dalam Rupiah (Rp) sesuai format Indonesia.
-5. Jika menjelaskan kode, sertakan contoh, penjelasan singkat, tips best practice, dan optimalkan agar mudah dipahami.
-6. Jika pengguna menyapa, bercanda, atau bertanya santai, tanggapi secara nyambung dan ramah.
-7. Berikan jawaban yang relevan, profesional, dan sesuai permintaan pengguna.
-8. Jangan gunakan tanda **bold**, _italic_, atau Markdown lain di jawaban.
-9. Jika AI tidak yakin, jawab jujur atau minta klarifikasi.
+  const finalPromptText = `${systemPrompt}\n\n=== RIWAYAT ===\n${historyText}\n${fileTextContext}\n\nUser (${userPanggilan}): ${message}`;
+  
+  const partsToSend: any[] = [];
+  if (visualPart) partsToSend.push(visualPart);
+  partsToSend.push({ text: finalPromptText });
 
-Instruksi gaya:
-- Jika pengguna bertanya "siapa penciptamu" atau "siapa yang membuatmu", jawab: "Saya diciptakan oleh M. Roifan Aji Marzuki, Web Developer asal Glenmore, Banyuwangi."
-- Jawaban harus cerdas, relevan, dan profesional.
-- Gunakan bahasa santai tapi tetap sopan dan mudah dipahami.
-- Jawaban ringkas, jelas, dan mudah dibaca.
-- Jangan gunakan Markdown, bold, italic, underline, atau format lain.
-- Gunakan istilah teknis bila perlu, tapi jangan terlalu kaku.
-- Jika pertanyaan matematika, jelaskan langkah demi langkah.
-- Nominal uang selalu dalam Rupiah (Rp) sesuai format Indonesia.
-- Jika menjelaskan kode atau teknologi, sertakan contoh, penjelasan singkat, dan tips optimasi agar mudah dipahami.
-- Jika tidak yakin, jawab jujur atau minta klarifikasi.
+  // === EKSEKUSI REQUEST DENGAN SISTEM ROTASI KEY ===
+  let aiReply = null;
+  let activeKey = ""; // Untuk tau key mana yang berhasil
+  let lastError = null;
 
-Catatan tambahan:
-- Gunakan emoji secukupnya untuk memberi kesan hangat.
-- Selalu cek ulang hasil perhitungan, kode, atau jawaban teknis sebelum diberikan.
-- Gunakan campuran bahasa santai Indonesia dan istilah teknis Inggris bila perlu.
-- Prioritaskan interaksi yang personal dan membantu pengguna.
-- Jawaban harus ringkas, jelas, profesional, dan mudah dibaca, tanpa format Markdown.
-`;
+  // Loop mencoba setiap key
+  for (const key of apiKeys) {
+    try {
+        console.log(`Mencoba request dengan Key: ...${key?.slice(-4)}`);
+        
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${key}`,
+          { contents: [{ parts: partsToSend }] },
+          { headers: { 'Content-Type': 'application/json' }, timeout: 60000 }
+        );
 
-  // Gabungkan sistem prompt + history + pesan user
-  const fullText = systemPrompt + "\n" + history.join("\n") + "\n" + message;
+        aiReply = response.data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("\n");
+        activeKey = key; // Simpan key yang sukses buat generate judul nanti
+        break; // SUKSES! Keluar dari loop
 
-  // === API Key Gemini ===
-  const apiKey = process.env.GOOGLE_API_KEY; // letakkan di .env.local
-
-  try {
-    const response = await axios.post(
-  `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-  {
-    contents: [
-      {
-        parts: [{ text: fullText }]
-      }
-    ]
-  },
-  {
-    headers: {
-      'Content-Type': 'application/json'
+    } catch (error: any) {
+        lastError = error;
+        // Jika errornya 429 (Limit Habis), lanjut ke key berikutnya
+        if (error.response?.status === 429) {
+            console.warn(`⚠️ Key ...${key?.slice(-4)} Limit Habis! Ganti ke key cadangan...`);
+            continue; // Coba key selanjutnya
+        } else {
+            // Jika error lain (misal 400 Bad Request), stop jangan paksa lanjut
+            console.error("Error Fatal:", error.message);
+            break; 
+        }
     }
   }
-);
 
-
-    // Ambil jawaban dari 'parts'
-    const parts = response.data.candidates[0].content.parts;
-    const aiReply = parts.map((p: any) => p.text).join("\n");
-
-    return res.status(200).json({ reply: aiReply });
-
-  } catch (error: any) {
-    console.error("Error Gemini API:", error.response?.data || error.message);
-    return res.status(500).json({ error: 'Gagal memproses permintaan AI.', detail: error.response?.data || error.message });
+  // Jika setelah semua key dicoba tetap gagal
+  if (!aiReply) {
+      console.error("SEMUA API KEY HABIS/ERROR");
+      if (lastError?.response?.status === 429) {
+          return res.status(200).json({ 
+             reply: "⚠️ **Semua Jalur Sibuk.**\nMaaf, server sedang sangat padat (Semua API Key limit). Mohon tunggu 1 menit lagi ya." 
+          });
+      }
+      return res.status(500).json({ error: 'Gagal', detail: lastError?.message });
   }
+
+  // === GENERATE JUDUL (Pakai Key yang tadi berhasil) ===
+  let generatedTitle = null;
+  if (!history || history.length <= 1) {
+     try {
+       const titleRes = await axios.post(
+          `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${activeKey}`,
+          { 
+            contents: [{ parts: [{ text: `Buatkan judul sangat pendek (3-4 kata) untuk topik ini: "${message}". Tanpa tanda kutip.` }] }] 
+          },
+          { headers: { 'Content-Type': 'application/json' } }
+       );
+       generatedTitle = titleRes.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().replace(/[*"]/g, '');
+     } catch (e) {
+       console.error("Gagal buat judul:", e);
+     }
+  }
+
+  // Kirim Respon Sukses
+  res.status(200).json({ reply: aiReply, title: generatedTitle });
 }
