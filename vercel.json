@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/generate-suggestions", "schedule": "0 23 * * *" }
+  ]
+}
